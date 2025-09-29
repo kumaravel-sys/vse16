@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>School Stock Market</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h1>📈 School Stock Market</h1>
+
+  <!-- Login Form -->
+  <div id="loginDiv">
+    <h3>Login</h3>
+    <input type="email" id="email" placeholder="Email"><br><br>
+    <input type="password" id="password" placeholder="Password"><br><br>
+    <button onclick="login()">Login</button>
+  </div>
+
+  <!-- Stock Section -->
+  <div id="stockDiv" style="display:none;">
+    <h2>Welcome, <span id="userEmail"></span>!</h2>
+    <p>Balance: 💰 <span id="balance">100000</span></p>
+    <div id="stockList"></div>
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <!-- Admin Panel -->
+  <div id="adminDiv" style="display:none;">
+    <h2>👑 Admin Panel</h2>
+    <div id="allUsers"></div>
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <script type="module">
+    // -------- Firebase Setup --------
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } 
+      from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+    import { getFirestore, doc, setDoc, getDoc, updateDoc, collection, getDocs } 
+      from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+
+    // 🔴 STEP 1: REPLACE THIS with your Firebase config from Project Settings → Web App
+    // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDVPZUpZcPca-1kqY7TFbtmvZFJul8xgN4",
+  authDomain: "vse-b5487.firebaseapp.com",
+  projectId: "vse-b5487",
+  storageBucket: "vse-b5487.firebasestorage.app",
+  messagingSenderId: "82864098861",
+  appId: "1:82864098861:web:39406ef4a54634029b72a4"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // 🔴 STEP 2: REPLACE THIS with your Finnhub key
+    const FINNHUB_KEY = "d3bm7n1r01qqg7bv706gd3bm7n1r01qqg7bv7070";  
+
+    // 🔴 STEP 3: REPLACE THIS with your admin email
+    const ADMIN_EMAIL = "admin6@vse.com";
+
+    // -------- Stock List (you can rename freely) --------
+    const STOCKS = [
+      { symbol: "AAPL", name: "organising department" }, 
+      { symbol: "GOOGL", name: "models department" }, 
+      { symbol: "MSFT", name: "tech department" }, 
+      { symbol: "TSLA", name: "finance department" }, 
+      { symbol: "AMZN", name: "games department" }, 
+      { symbol: "META", name: "foodstalls department" }, 
+      { symbol: "NFLX", name: "stalls department" }, 
+      { symbol: "NVDA", name: "seminar department" }, 
+      { symbol: "JPM", name: "photography department" }
+    ];
+
+    // -------- Auth Functions --------
+    function login() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      signInWithEmailAndPassword(auth, email, password)
+        .catch(err => alert(err.message));
+    }
+
+    function logout() {
+      signOut(auth);
+    }
+
+    onAuthStateChanged(auth, async user => {
+      if (user) {
+        document.getElementById("loginDiv").style.display = "none";
+
+        if (user.email === ADMIN_EMAIL) {
+          // Admin view
+          document.getElementById("adminDiv").style.display = "block";
+          loadAdmin();
+        } else {
+          // User view
+          document.getElementById("stockDiv").style.display = "block";
+          document.getElementById("userEmail").innerText = user.email;
+          await initUser(user.email);
+          loadStocks(user.email);
+        }
+      } else {
+        document.getElementById("loginDiv").style.display = "block";
+        document.getElementById("stockDiv").style.display = "none";
+        document.getElementById("adminDiv").style.display = "none";
+      }
+    });
+
+    // -------- Firestore Functions --------
+    async function initUser(email) {
+      const ref = doc(db, "users", email);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, { balance: 100000, holdings: {} });
+      }
+    }
+
+    async function getUser(email) {
+      const ref = doc(db, "users", email);
+      const snap = await getDoc(ref);
+      return snap.data();
+    }
+
+    async function updateUser(email, data) {
+      const ref = doc(db, "users", email);
+      await updateDoc(ref, data);
+    }
+
+    // -------- Stock Functions --------
+    async function getStockPrice(symbol) {
+      const res = await fetch(`https://finnhub.io/api/v1/quote?symbol=${symbol}&token=${FINNHUB_KEY}`);
+      const data = await res.json();
+      return data.c; // current price
+    }
+
+    async function loadStocks(email) {
+      const user = await getUser(email);
+      document.getElementById("balance").innerText = user.balance;
+
+      const listDiv = document.getElementById("stockList");
+      listDiv.innerHTML = "";
+
+      for (let stock of STOCKS) {
+        const price = await getStockPrice(stock.symbol);
+        const div = document.createElement("div");
+        div.innerHTML = `
+          <h3>${stock.name} (${stock.symbol})</h3>
+          Price: ${price}<br>
+          <button onclick="buyStock('${email}','${stock.symbol}',${price})">Buy</button>
+          <button onclick="sellStock('${email}','${stock.symbol}',${price})">Sell</button>
+          <canvas id="chart-${stock.symbol}" width="300" height="150"></canvas>
+          <hr>
+        `;
+        listDiv.appendChild(div);
+        drawChart(stock.symbol);
+      }
+    }
+
+    async function buyStock(email, symbol, price) {
+      const user = await getUser(email);
+      if (user.balance < price) {
+        alert("Not enough balance!");
+        return;
+      }
+      user.balance -= price;
+      user.holdings[symbol] = (user.holdings[symbol] || 0) + 1;
+      await updateUser(email, user);
+      loadStocks(email);
+    }
+
+    async function sellStock(email, symbol, price) {
+      const user = await getUser(email);
+      if (!user.holdings[symbol] || user.holdings[symbol] <= 0) {
+        alert("You don’t own this stock!");
+        return;
+      }
+      user.balance += price;
+      user.holdings[symbol] -= 1;
+      await updateUser(email, user);
+      loadStocks(email);
+    }
+
+    // -------- Chart --------
+    async function drawChart(symbol) {
+      const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&count=10&token=${FINNHUB_KEY}`);
+      const data = await res.json();
+      if (data.s !== "ok") return;
+
+      const ctx = document.getElementById(`chart-${symbol}`).getContext("2d");
+      new Chart(ctx, {
+        type: "line",
+        data: {
+          labels: data.t.map(ts => new Date(ts*1000).toLocaleDateString()),
+          datasets: [{
+            label: symbol,
+            data: data.c,
+            borderColor: "blue",
+            fill: false
+          }]
+        }
+      });
+    }
+
+    // -------- Admin --------
+    async function loadAdmin() {
+      const usersRef = collection(db, "users");
+      const snaps = await getDocs(usersRef);
+      let html = "";
+      snaps.forEach(doc => {
+        const data = doc.data();
+        html += `<p><b>${doc.id}</b> - Balance: ${data.balance} - Holdings: ${JSON.stringify(data.holdings)}</p>`;
+      });
+      document.getElementById("allUsers").innerHTML = html;
+    }
+
+    // Expose buy/sell for HTML
+    window.buyStock = buyStock;
+    window.sellStock = sellStock;
+    window.login = login;
+    window.logout = logout;
+
+  </script>
+</body>
+</html>
